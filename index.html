@@ -4556,15 +4556,29 @@ function parseWiktionnaire(wikitext, word) {
       if (p && p.length > 1 && p.length < 30 && p !== word && !/[{}|=<>\[\]]/.test(p)) synonyms.push(p);
     });
   }
-  // Method 2: ==== Synonymes ==== section
+  // Method 2: section synonymes — both formats:
+  // ==== Synonymes ==== and ==== {{S|synonymes}} ====
   if (!synonyms.length) {
-    var synSec = frText.match(/====?\s*Synonym[^=\n]*====?([\s\S]*?)(?:={3,}|$)/i);
+    // Match both plain header and {{S|synonymes}} template header
+    var synSec = frText.match(/={3,}\s*(?:Synonym[^=\n]*|\{\{S\|synonymes[^}]*\}\})\s*={3,}([\s\S]*?)(?:={3,}|$)/i);
     if (synSec) {
       var sm, re2 = /\[\[([^\]|#*{}\s<>][^\]|#{}<>]*?)(?:\|[^\]]+)?\]\]/g;
       while ((sm = re2.exec(synSec[1])) !== null) {
         var s = sm[1].toLowerCase().trim();
         if (s && s !== word && s.length < 30) synonyms.push(s);
         if (synonyms.length >= 25) break;
+      }
+    }
+  }
+
+  // Method 3b: {{lien|mot|fr}} patterns anywhere in the synonymes block
+  if (!synonyms.length) {
+    var lienSec = frText.match(/={3,}\s*(?:Synonym[^=\n]*|\{\{S\|synonymes[^}]*\}\})\s*={3,}([\s\S]*?)(?:={3,}|$)/i);
+    if (lienSec) {
+      var lm, lre = /\{\{lien\|([^|{}]+)\|fr\}\}/g;
+      while ((lm = lre.exec(lienSec[1])) !== null) {
+        var lw = lm[1].toLowerCase().trim();
+        if (lw && lw !== word && lw.length < 30) synonyms.push(lw);
       }
     }
   }
@@ -4582,9 +4596,9 @@ function parseWiktionnaire(wikitext, word) {
   });
   if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words: synonyms.length ? synonyms : ['(aucun trouvé)'] });
 
-  // Antonyms
+  // Antonyms — handle both ==== Antonymes ==== and {{S|antonymes}}
   var antonyms = [];
-  var antSec = frText.match(/====?\s*Antonym[^=\n]*====?([\s\S]*?)(?:={3,}|$)/i);
+  var antSec = frText.match(/={3,}\s*(?:Antonym[^=\n]*|\{\{S\|antonymes[^}]*\}\})\s*={3,}([\s\S]*?)(?:={3,}|$)/i);
   if (antSec) {
     var am, re3 = /\[\[([^\]|#*{}\s<>][^\]|#{}<>]*?)(?:\|[^\]]+)?\]\]/g;
     while ((am = re3.exec(antSec[1])) !== null) {
@@ -4594,8 +4608,14 @@ function parseWiktionnaire(wikitext, word) {
     }
   }
 
-  // Examples
+  // Examples — also try {{exemple|...}} template
   var examples = [];
+  // Try {{exemple|texte=...}} template first
+  var exTpl = frText.match(/\{\{exemple\s*\|[^}]*texte=([^|{}]+)/i);
+  if (exTpl) {
+    var et = exTpl[1].trim();
+    if (et.length > 15 && et.length < 200) examples.push(et);
+  }
   var exRe = /^#:\s*(.{15,200})$/gm, em;
   while ((em = exRe.exec(frText)) !== null) {
     var e = clean(em[1]);
