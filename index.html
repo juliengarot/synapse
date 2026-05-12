@@ -3,19 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Synapse — Dictionnaire neuronal : synonymes et définitions</title>
-<meta name="description" content="Dictionnaire neuronal de synonymes et définitions. Explorez la langue française comme un réseau de neurones vivant.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/favicon.svg">
+
+<title>Neuromots — Dictionnaire neuronal : synonymes et définitions</title>
+<meta name="description" content="Neuromots : dictionnaire neuronal de synonymes et définitions. Explorez la langue française comme un réseau de neurones vivant.">
   <meta property="og:type"         content="website">
   <meta property="og:title"        content="Synapse — Dictionnaire neuronal : synonymes et définitions">
   <meta property="og:description"  content="Explorez la langue française comme un réseau de neurones vivant. Synonymes, définitions, visualisation interactive.">
-  <meta property="og:url"          content="https://synapse.vercel.app">
-  <meta property="og:image"        content="https://synapse.vercel.app/og-image.png">
+  <meta property="og:url"          content="https://www.neuromots.fr">
+  <meta property="og:image"        content="https://www.neuromots.fr/og-image.png">
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="Synapse — Dictionnaire neuronal">
   <meta name="twitter:description" content="Synonymes et définitions en réseau neuronal visuel">
   <meta name="robots"              content="index, follow">
   <meta name="author"              content="Synapse">
-  <link rel="canonical"            href="https://synapse.vercel.app">
+  <link rel="canonical"            href="https://www.neuromots.fr">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1324,6 +1327,16 @@ body.in-dragzone #export-png-btn { display: flex; }
   #export-png-btn { left: 62px; }
 }
 </style>
+  <!-- Google Analytics 4 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-93SPFD02FC"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-93SPFD02FC');
+  </script>
+  <!-- Vercel Analytics -->
+  <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body data-theme="rainbow">
 
@@ -4218,15 +4231,149 @@ function doSearch(fromResults=false) {
 }
 
 function searchWord(word) {
-  currentWord = word;
-  const data = DICTIONARY[word] || generateFallback(word);
-  document.getElementById('result-word-display').textContent = word;
-  document.getElementById('result-meta').textContent = `${countSyns(data)} synonymes · ${data.clusters.length} nuances · ${data.antonymes.length} antonymes`;
-  buildListView(word, data);
+  word = word.trim().toLowerCase();
+  if (!word) return;
+  currentWord = word.trim();
+
+  // ── Update URL for SEO — /mot/beau ────────────────────
+  const newUrl = '/mot/' + encodeURIComponent(currentWord);
+  window.history.pushState({ word: currentWord }, '', newUrl);
+
+  // ── Update meta tags dynamically ──────────────────────
+  document.title = currentWord.charAt(0).toUpperCase() + currentWord.slice(1)
+    + ' — synonymes et définitions | Neuromots';
+  const metaDesc = document.querySelector('meta[name="description"]');
+  if (metaDesc) metaDesc.content = `Synonymes, définitions et réseau de sens du mot "${currentWord}". Explorez la langue française avec Neuromots.`;
+  const ogTitle = document.querySelector('meta[property="og:title"]');
+  if (ogTitle) ogTitle.content = currentWord + ' — synonymes | Neuromots';
+  const ogUrl = document.querySelector('meta[property="og:url"]');
+  if (ogUrl) ogUrl.content = 'https://www.neuromots.fr/mot/' + encodeURIComponent(currentWord);
+  const canonical = document.querySelector('link[rel="canonical"]');
+  if (canonical) canonical.href = 'https://www.neuromots.fr/mot/' + encodeURIComponent(currentWord);
+
+  // ── Check local dictionary first (fast path) ──────────
+  if (DICTIONARY[currentWord]) {
+    _renderWord(currentWord, DICTIONARY[currentWord]);
+    return;
+  }
+
+  // ── Fetch from Wiktionnaire API ────────────────────────
   showPage('results');
+  document.getElementById('results-word').textContent = currentWord;
+  const loading = document.getElementById('results-word');
+  if (loading) loading.style.opacity = '0.5';
+
+  const apiUrl = `https://fr.wiktionary.org/w/api.php?action=query&titles=${encodeURIComponent(currentWord)}&prop=revisions&rvprop=content&rvslots=main&format=json&origin=*`;
+
+  fetch(apiUrl)
+    .then(r => r.json())
+    .then(json => {
+      const pages = json.query.pages;
+      const page  = pages[Object.keys(pages)[0]];
+      if (page.missing !== undefined || !page.revisions) {
+        // Word not found — use fallback
+        _renderWord(currentWord, generateFallback(currentWord));
+        return;
+      }
+      const wikitext = page.revisions[0].slots.main['*'] || page.revisions[0]['*'] || '';
+      const data = parseWiktionnaire(wikitext, currentWord);
+      _renderWord(currentWord, data);
+    })
+    .catch(() => {
+      _renderWord(currentWord, generateFallback(currentWord));
+    })
+    .finally(() => {
+      if (loading) loading.style.opacity = '1';
+    });
+}
+
+function parseWiktionnaire(wikitext, word) {
+  // Extract French section only
+  const frMatch = wikitext.match(/==\s*{{langue\|fr}}\s*==\s*([\s\S]*?)(?:==\s*{{langue\|(?!fr))/i)
+    || wikitext.match(/==\s*{{langue\|fr}}\s*==\s*([\s\S]*?)$/i);
+  const frText = frMatch ? frMatch[1] : wikitext;
+
+  // ── Extract definition (first # line) ─────────────────
+  const defLines = [];
+  const defMatches = frText.matchAll(/^#\s*(?!\*|:)(.+)$/gm);
+  for (const m of defMatches) {
+    let def = m[1]
+      .replace(/\{\{[^}]+\}\}/g, '')   // remove templates
+      .replace(/\[\[([^\]|]+\|)?([^\]]+)\]\]/g, '$2') // wikilinks
+      .replace(/'''([^']+)'''/g, '$1')  // bold
+      .replace(/''([^']+)''/g, '$1')    // italic
+      .trim();
+    if (def.length > 10) defLines.push(def);
+    if (defLines.length >= 3) break;
+  }
+  const def = defLines[0] || `Mot de la langue française.`;
+
+  // ── Extract synonyms ───────────────────────────────────
+  const synSection = frText.match(/====\s*Synonymes\s*====\s*([\s\S]*?)(?:====|===|$)/i);
+  const synonyms = [];
+  if (synSection) {
+    const synLines = synSection[1].matchAll(/^\*\s*(?:\{\{[^}]+\}\}\s*)?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gm);
+    for (const m of synLines) {
+      const s = m[1].trim().toLowerCase();
+      if (s && s !== word && s.length < 30) synonyms.push(s);
+      if (synonyms.length >= 16) break;
+    }
+  }
+
+  // ── Extract antonyms ──────────────────────────────────
+  const antSection = frText.match(/====\s*Antonymes\s*====\s*([\s\S]*?)(?:====|===|$)/i);
+  const antonyms = [];
+  if (antSection) {
+    const antLines = antSection[1].matchAll(/^\*\s*(?:\{\{[^}]+\}\}\s*)?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gm);
+    for (const m of antLines) {
+      const a = m[1].trim().toLowerCase();
+      if (a && a !== word) antonyms.push(a);
+      if (antonyms.length >= 6) break;
+    }
+  }
+
+  // ── Extract examples ──────────────────────────────────
+  const examples = [];
+  const exMatches = frText.matchAll(/^#:\s*(?:'')?(.+?)(?:'')?$/gm);
+  for (const m of exMatches) {
+    let ex = m[1].replace(/\{\{[^}]+\}\}/g, '').replace(/\[\[([^\]|]+\|)?([^\]]+)\]\]/g, '$2').trim();
+    if (ex.length > 15 && ex.length < 200) examples.push(ex);
+    if (examples.length >= 2) break;
+  }
+
+  // ── Build clusters from synonyms ──────────────────────
+  const colors = ['#7c3aed','#ec4899','#0ea5e9','#10b981','#f59e0b'];
+  const chunkSize = Math.ceil(synonyms.length / 5) || 1;
+  const clusters = [];
+  const labels = ['Sens proche', 'Nuance', 'Registre', 'Contexte', 'Variante'];
+  for (let ci = 0; ci < 5 && ci * chunkSize < synonyms.length; ci++) {
+    const chunk = synonyms.slice(ci * chunkSize, (ci + 1) * chunkSize);
+    if (chunk.length) {
+      clusters.push({ name: labels[ci], color: colors[ci], words: chunk });
+    }
+  }
+  if (!clusters.length) {
+    clusters.push({ name: 'Synonymes', color: colors[0], words: ['(aucun trouvé)'] });
+  }
+
+  return {
+    def,
+    clusters,
+    antonyms: antonyms.length ? antonyms : [],
+    examples: examples.length ? examples : ["Exemple d'utilisation du mot " + word + "."],
+  };
+}
+
+function _renderWord(word, data) {
+  showPage('results');
+  document.getElementById('results-word').textContent = word;
   switchView('list');
+  buildListView(word, data);
+  currentView = 'list';
   setTimeout(() => drawGraph(word, data), 80);
 }
+
+
 
 function countSyns(data) {
   return data.clusters.reduce((s, c) => s + c.words.length, 0);
@@ -4751,6 +4898,31 @@ document.addEventListener('keydown', e => {
   }
   tickTitle();
 })();
+
+// ── URL routing: /mot/beau → auto-search ─────────────────────
+(function() {
+  const path = window.location.pathname;
+  const match = path.match(/^\/mot\/(.+)$/i);
+  if (match) {
+    const word = decodeURIComponent(match[1]).toLowerCase().trim();
+    if (word) {
+      // Wait for DOM + engines to be ready
+      window.addEventListener('load', () => {
+        setTimeout(() => searchWord(word), 300);
+      });
+    }
+  }
+  // Handle browser back/forward
+  window.addEventListener('popstate', (e) => {
+    if (e.state && e.state.word) {
+      _renderWord(e.state.word, DICTIONARY[e.state.word] || generateFallback(e.state.word));
+    } else {
+      showPage('home');
+      document.title = 'Neuromots — Dictionnaire neuronal : synonymes et définitions';
+    }
+  });
+})();
+
 </script>
 </body>
 </html>
