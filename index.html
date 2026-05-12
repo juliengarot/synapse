@@ -4400,7 +4400,18 @@ function cacheSet(word, data) {
   } catch(e) {}
 }
 
-// ── Main search function ──────────────────────────────────────
+// ── Main search function ─────────────────────────────────────
+var SUPABASE_URL = 'https://nuhahfarneflxcqopfed.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_qpoBRqIXaHoRTYHag3Ug_w_rcWLJIAt';
+
+function supabaseHeaders() {
+  return {
+    'apikey':        SUPABASE_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Content-Type':  'application/json'
+  };
+}
+
 function searchWord(word) {
   word = word.trim().toLowerCase();
   if (!word) return;
@@ -4413,137 +4424,114 @@ function searchWord(word) {
   var metaDesc = document.querySelector('meta[name="description"]');
   if (metaDesc) metaDesc.content = 'Synonymes, définitions et réseau de sens du mot "' + word + '". Neuromots.';
 
-  // 1. Local dictionary (hardcoded)
+  // 1. Dictionnaire local
   if (DICTIONARY[word]) { _renderWord(word, DICTIONARY[word]); return; }
 
-  // 2. localStorage cache
+  // 2. Cache localStorage
   var cached = cacheGet(word);
   if (cached) { _renderWord(word, cached); return; }
 
-  // 3. Wiktionnaire API
+  // 3. Supabase (base propre)
   showPage('results');
   var titleEl = document.getElementById('results-word');
   if (titleEl) { titleEl.textContent = word; titleEl.style.opacity = '0.5'; }
 
+  fetchFromSupabase(word)
+    .then(function(data) {
+      if (data) {
+        cacheSet(word, data);
+        _renderWord(word, data);
+        return;
+      }
+      // 4. Pas dans Supabase → Wiktionnaire
+      return fetchFromWiktionnaire(word).then(function(wikiData) {
+        cacheSet(word, wikiData);
+        // Enregistrer dans Supabase pour les prochains visiteurs
+        saveToSupabase(word, wikiData);
+        _renderWord(word, wikiData);
+      });
+    })
+    .catch(function() {
+      var fb = generateFallback(word);
+      _renderWord(word, fb);
+    })
+    .finally(function() {
+      if (titleEl) titleEl.style.opacity = '1';
+    });
+}
+
+// ── Supabase: lire un mot ────────────────────────────────────
+function fetchFromSupabase(word) {
+  var url = SUPABASE_URL + '/rest/v1/mots'
+    + '?mot=eq.' + encodeURIComponent(word)
+    + '&select=id,mot,definition,synonymes(synonyme,registre),antonymes(antonyme),exemples(exemple)';
+
+  return fetch(url, { headers: supabaseHeaders() })
+    .then(function(r) { return r.ok ? r.json() : []; })
+    .then(function(rows) {
+      if (!rows || !rows.length) return null;
+      var row = rows[0];
+      var byReg = { soutenu:[], courant:[], familier:[], populaire:[] };
+      (row.synonymes || []).forEach(function(s) {
+        var reg = s.registre || 'courant';
+        if (!byReg[reg]) byReg[reg] = [];
+        byReg[reg].push(s.synonyme);
+      });
+      var colors = { soutenu:'#7c3aed', courant:'#0ea5e9', familier:'#10b981', populaire:'#f59e0b' };
+      var clusters = [];
+      ['soutenu','courant','familier','populaire'].forEach(function(reg) {
+        if (byReg[reg].length > 0) clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg], words: byReg[reg] });
+      });
+      if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words:['(aucun)'] });
+      return {
+        def:      row.definition || 'Mot de la langue française.',
+        clusters: clusters,
+        antonyms: (row.antonymes || []).map(function(a) { return a.antonyme; }),
+        examples: (row.exemples  || []).map(function(e) { return e.exemple; }),
+      };
+    })
+    .catch(function() { return null; });
+}
+
+// ── Supabase: sauvegarder un mot (enrichissement auto) ────────
+function saveToSupabase(word, data) {
+  // Préparer les synonymes avec registre
+  var syns = [];
+  (data.clusters || []).forEach(function(cl) {
+    var reg = cl.name.toLowerCase();
+    (cl.words || []).forEach(function(w) {
+      if (w !== '(aucun trouvé)' && w !== '(aucun synonyme trouvé)') syns.push({ mot: w, registre: reg });
+    });
+  });
+
+  var payload = {
+    p_mot:       word,
+    p_definition: data.def || '',
+    p_synonymes: JSON.stringify(syns),
+    p_antonymes: data.antonyms || [],
+    p_exemples:  data.examples || [],
+  };
+
+  fetch(SUPABASE_URL + '/rest/v1/rpc/insert_mot_complet', {
+    method:  'POST',
+    headers: supabaseHeaders(),
+    body:    JSON.stringify(payload),
+  }).catch(function() {}); // silencieux si échec
+}
+
+// ── Wiktionnaire ─────────────────────────────────────────────
+function fetchFromWiktionnaire(word) {
   var apiUrl = 'https://fr.wiktionary.org/w/api.php'
     + '?action=parse&page=' + encodeURIComponent(word)
     + '&prop=wikitext&format=json&origin=*';
 
-  fetch(apiUrl)
+  return fetch(apiUrl)
     .then(function(r) { return r.ok ? r.json() : {}; })
     .then(function(json) {
       var wikitext = (json.parse && json.parse.wikitext) ? (json.parse.wikitext['*'] || '') : '';
-      var data = wikitext ? parseWiktionnaire(wikitext, word) : generateFallback(word);
-      cacheSet(word, data);
-      _renderWord(word, data);
+      return wikitext ? parseWiktionnaire(wikitext, word) : generateFallback(word);
     })
-    .catch(function() { _renderWord(word, generateFallback(word)); })
-    .finally(function() { if (titleEl) titleEl.style.opacity = '1'; });
-}
-
-// ── Wiktionnaire parser ───────────────────────────────────────
-function parseWiktionnaire(wikitext, word) {
-  // Extract French section only
-  var frText = wikitext;
-  var frM = wikitext.match(/==\s*\{\{langue\|fr\}\}\s*==([\s\S]*?)(?===\s*\{\{langue\|(?!fr))/i)
-           || wikitext.match(/==\s*\{\{langue\|fr\}\}\s*==([\s\S]*)$/i);
-  if (frM) frText = frM[1];
-
-  function clean(s) {
-    return s
-      .replace(/\{\{[^}]*\}\}/g, '')
-      .replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1')
-      .replace(/'{2,3}/g, '')
-      .replace(/<[^>]+>/g, '')
-      .replace(/\s+/g, ' ').trim();
-  }
-
-  // ── Definition ─────────────────────────────────────────────
-  var def = 'Mot de la langue française.';
-  var defM = frText.match(/^#\s*(?![*:#])(.{10,})$/m);
-  if (defM) {
-    var d = clean(defM[1]);
-    if (d.length > 8) def = d;
-  }
-
-  // ── Synonyms: 3 methods ────────────────────────────────────
-  var synonyms = [];
-
-  // Method 1 — {{syn|lang=fr|mot1|mot2|...}}
-  var synTpl = frText.match(/\{\{syn\s*\|([^}]+)\}\}/i);
-  if (synTpl) {
-    synTpl[1].split('|').forEach(function(p) {
-      p = p.replace(/^\s*lang\s*=\s*\S+/, '').replace(/=.+/, '').trim().toLowerCase();
-      if (p && p.length > 1 && p.length < 30 && p !== word && !/[{}|=<>\[\]]/.test(p)) {
-        synonyms.push(p);
-      }
-    });
-  }
-
-  // Method 2 — ==== Synonymes ==== section [[liens]]
-  if (synonyms.length === 0) {
-    var synSec = frText.match(/====?\s*Synonym[^=\n]*====?([\s\S]*?)(?:={3,}|$)/i);
-    if (synSec) {
-      var sm, re2 = /\[\[([^\]|#*{}\s<>][^\]|#{}<>]*?)(?:\|[^\]]+)?\]\]/g;
-      while ((sm = re2.exec(synSec[1])) !== null) {
-        var s = sm[1].toLowerCase().trim();
-        if (s && s !== word && s.length < 30) synonyms.push(s);
-        if (synonyms.length >= 25) break;
-      }
-    }
-  }
-
-  // Method 3 — {{lien|mot|fr}} patterns
-  if (synonyms.length === 0) {
-    var lienRe = /\{\{lien\|([^|{}]+)\|fr\}\}/g, lm;
-    while ((lm = lienRe.exec(frText)) !== null) {
-      var l = lm[1].toLowerCase().trim();
-      if (l && l !== word && l.length < 30) synonyms.push(l);
-    }
-  }
-
-  // ── Build clusters by register ─────────────────────────────
-  var byReg = { soutenu:[], courant:[], familier:[], populaire:[] };
-  synonyms.forEach(function(s) { byReg[getRegistre(s)].push(s); });
-
-  var colors = { soutenu:'#7c3aed', courant:'#0ea5e9', familier:'#10b981', populaire:'#f59e0b' };
-  var clusters = [];
-  ['soutenu','courant','familier','populaire'].forEach(function(reg) {
-    if (byReg[reg].length > 0) {
-      clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg], words: byReg[reg] });
-    }
-  });
-  if (clusters.length === 0) {
-    clusters.push({ name: 'Synonymes', color: '#7c3aed', words: synonyms.length ? synonyms : ['(aucun trouvé)'] });
-  }
-
-  // ── Antonyms ────────────────────────────────────────────────
-  var antonyms = [];
-  var antSec = frText.match(/====?\s*Antonym[^=\n]*====?([\s\S]*?)(?:={3,}|$)/i);
-  if (antSec) {
-    var am, re3 = /\[\[([^\]|#*{}\s<>][^\]|#{}<>]*?)(?:\|[^\]]+)?\]\]/g;
-    while ((am = re3.exec(antSec[1])) !== null) {
-      var a = am[1].toLowerCase().trim();
-      if (a && a !== word && a.length < 30) antonyms.push(a);
-      if (antonyms.length >= 6) break;
-    }
-  }
-
-  // ── Examples ────────────────────────────────────────────────
-  var examples = [];
-  var exRe = /^#:\s*(.{15,200})$/gm, em;
-  while ((em = exRe.exec(frText)) !== null) {
-    var e = clean(em[1]);
-    if (e.length > 15) examples.push(e);
-    if (examples.length >= 2) break;
-  }
-
-  return {
-    def:      def,
-    clusters: clusters,
-    antonyms: antonyms,
-    examples: examples.length ? examples : ['Exemple du mot ' + word + '.'],
-  };
+    .catch(function() { return generateFallback(word); });
 }
 
 function _renderWord(word, data) {
@@ -4555,6 +4543,8 @@ function _renderWord(word, data) {
   buildListView(word, data);
   setTimeout(function() { drawGraph(word, data); }, 80);
 }
+
+
 
 
 
