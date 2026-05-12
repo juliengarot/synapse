@@ -4233,145 +4233,139 @@ function doSearch(fromResults=false) {
 function searchWord(word) {
   word = word.trim().toLowerCase();
   if (!word) return;
-  currentWord = word.trim();
+  currentWord = word;
 
-  // ── Update URL for SEO — /mot/beau ────────────────────
-  const newUrl = '/mot/' + encodeURIComponent(currentWord);
-  window.history.pushState({ word: currentWord }, '', newUrl);
-
-  // ── Update meta tags dynamically ──────────────────────
-  document.title = currentWord.charAt(0).toUpperCase() + currentWord.slice(1)
-    + ' — synonymes et définitions | Neuromots';
+  // Update URL for SEO
+  const slug = '/mot/' + encodeURIComponent(word);
+  window.history.pushState({ word }, slug, slug);
+  document.title = word.charAt(0).toUpperCase() + word.slice(1) + ' — synonymes et définitions | Neuromots';
   const metaDesc = document.querySelector('meta[name="description"]');
-  if (metaDesc) metaDesc.content = `Synonymes, définitions et réseau de sens du mot "${currentWord}". Explorez la langue française avec Neuromots.`;
-  const ogTitle = document.querySelector('meta[property="og:title"]');
-  if (ogTitle) ogTitle.content = currentWord + ' — synonymes | Neuromots';
-  const ogUrl = document.querySelector('meta[property="og:url"]');
-  if (ogUrl) ogUrl.content = 'https://www.neuromots.fr/mot/' + encodeURIComponent(currentWord);
-  const canonical = document.querySelector('link[rel="canonical"]');
-  if (canonical) canonical.href = 'https://www.neuromots.fr/mot/' + encodeURIComponent(currentWord);
+  if (metaDesc) metaDesc.content = 'Synonymes, définitions et réseau de sens du mot "' + word + '". Neuromots.';
 
-  // ── Check local dictionary first (fast path) ──────────
-  if (DICTIONARY[currentWord]) {
-    _renderWord(currentWord, DICTIONARY[currentWord]);
-    return;
-  }
+  // Fast path: local dictionary
+  if (DICTIONARY[word]) { _renderWord(word, DICTIONARY[word]); return; }
 
-  // ── Fetch from Wiktionnaire API ────────────────────────
+  // Show results with loading state
   showPage('results');
-  document.getElementById('results-word').textContent = currentWord;
-  const loading = document.getElementById('results-word');
-  if (loading) loading.style.opacity = '0.5';
+  const titleEl = document.getElementById('results-word');
+  if (titleEl) { titleEl.textContent = word; titleEl.style.opacity = '0.5'; }
 
-  const apiUrl = `https://fr.wiktionary.org/w/api.php?action=query&titles=${encodeURIComponent(currentWord)}&prop=revisions&rvprop=content&rvslots=main&format=json&origin=*`;
+  // Wiktionnaire parse API — returns wikitext directly
+  const apiUrl = 'https://fr.wiktionary.org/w/api.php'
+    + '?action=parse&page=' + encodeURIComponent(word)
+    + '&prop=wikitext&format=json&origin=*';
 
   fetch(apiUrl)
-    .then(r => r.json())
-    .then(json => {
-      const pages = json.query.pages;
-      const page  = pages[Object.keys(pages)[0]];
-      if (page.missing !== undefined || !page.revisions) {
-        // Word not found — use fallback
-        _renderWord(currentWord, generateFallback(currentWord));
-        return;
+    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(json) {
+      if (json.error || !json.parse || !json.parse.wikitext) {
+        _renderWord(word, generateFallback(word)); return;
       }
-      const wikitext = page.revisions[0].slots.main['*'] || page.revisions[0]['*'] || '';
-      const data = parseWiktionnaire(wikitext, currentWord);
-      _renderWord(currentWord, data);
+      const wikitext = json.parse.wikitext['*'] || '';
+      _renderWord(word, wikitext ? parseWiktionnaire(wikitext, word) : generateFallback(word));
     })
-    .catch(() => {
-      _renderWord(currentWord, generateFallback(currentWord));
+    .catch(function(err) {
+      console.warn('API error:', err);
+      _renderWord(word, generateFallback(word));
     })
-    .finally(() => {
-      if (loading) loading.style.opacity = '1';
+    .finally(function() {
+      if (titleEl) titleEl.style.opacity = '1';
     });
 }
 
 function parseWiktionnaire(wikitext, word) {
-  // Extract French section only
-  const frMatch = wikitext.match(/==\s*{{langue\|fr}}\s*==\s*([\s\S]*?)(?:==\s*{{langue\|(?!fr))/i)
-    || wikitext.match(/==\s*{{langue\|fr}}\s*==\s*([\s\S]*?)$/i);
-  const frText = frMatch ? frMatch[1] : wikitext;
+  // Extract French section
+  var frText = wikitext;
+  var frM = wikitext.match(/==\s*\{\{langue\|fr\}\}\s*==([\s\S]*?)(?===\s*\{\{langue\|(?!fr))/i)
+           || wikitext.match(/==\s*\{\{langue\|fr\}\}\s*==([\s\S]*)$/i);
+  if (frM) frText = frM[1];
 
-  // ── Extract definition (first # line) ─────────────────
-  const defLines = [];
-  const defMatches = frText.matchAll(/^#\s*(?!\*|:)(.+)$/gm);
-  for (const m of defMatches) {
-    let def = m[1]
-      .replace(/\{\{[^}]+\}\}/g, '')   // remove templates
-      .replace(/\[\[([^\]|]+\|)?([^\]]+)\]\]/g, '$2') // wikilinks
-      .replace(/'''([^']+)'''/g, '$1')  // bold
-      .replace(/''([^']+)''/g, '$1')    // italic
-      .trim();
-    if (def.length > 10) defLines.push(def);
+  function clean(s) {
+    return s.replace(/\{\{[^}]*\}\}/g, '')
+            .replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1')
+            .replace(/'''([^']+)'''/g, '$1')
+            .replace(/''([^']+)''/g, '$1')
+            .replace(/\s+/g, ' ').trim();
+  }
+
+  // Definitions
+  var defLines = [], defMatches = frText.matchAll(/^#\s*(?![*:#])(.+)$/gm);
+  for (var dm of defMatches) {
+    var d = clean(dm[1]);
+    if (d.length > 8) defLines.push(d);
     if (defLines.length >= 3) break;
   }
-  const def = defLines[0] || `Mot de la langue française.`;
 
-  // ── Extract synonyms ───────────────────────────────────
-  const synSection = frText.match(/====\s*Synonymes\s*====\s*([\s\S]*?)(?:====|===|$)/i);
-  const synonyms = [];
-  if (synSection) {
-    const synLines = synSection[1].matchAll(/^\*\s*(?:\{\{[^}]+\}\}\s*)?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gm);
-    for (const m of synLines) {
-      const s = m[1].trim().toLowerCase();
-      if (s && s !== word && s.length < 30) synonyms.push(s);
-      if (synonyms.length >= 16) break;
+  // Synonyms from section
+  var synonyms = [];
+  var synM = frText.match(/====?\s*Synonym[^=]*====?([\s\S]*?)(?:====?|$)/i);
+  if (synM) {
+    for (var sm of synM[1].matchAll(/\[\[([^\]|#*]+?)(?:\|[^\]]+)?\]\]/g)) {
+      var s = sm[1].toLowerCase().trim();
+      if (s && s !== word && s.length < 30 && !/[{}|]/.test(s)) synonyms.push(s);
+      if (synonyms.length >= 20) break;
+    }
+  }
+  // Fallback: {{syn|...}} template
+  if (!synonyms.length) {
+    for (var st of frText.matchAll(/\{\{syn\|([^}]+)\}\}/gi)) {
+      st[1].split('|').forEach(function(p) {
+        p = p.replace(/lang=[^ |]+/, '').trim().toLowerCase();
+        if (p && p.length > 1 && p !== word && !/[{}=]/.test(p)) synonyms.push(p);
+      });
     }
   }
 
-  // ── Extract antonyms ──────────────────────────────────
-  const antSection = frText.match(/====\s*Antonymes\s*====\s*([\s\S]*?)(?:====|===|$)/i);
-  const antonyms = [];
-  if (antSection) {
-    const antLines = antSection[1].matchAll(/^\*\s*(?:\{\{[^}]+\}\}\s*)?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gm);
-    for (const m of antLines) {
-      const a = m[1].trim().toLowerCase();
-      if (a && a !== word) antonyms.push(a);
+  // Antonyms
+  var antonyms = [];
+  var antM = frText.match(/====?\s*Antonym[^=]*====?([\s\S]*?)(?:====?|$)/i);
+  if (antM) {
+    for (var am of antM[1].matchAll(/\[\[([^\]|#*]+?)(?:\|[^\]]+)?\]\]/g)) {
+      var a = am[1].toLowerCase().trim();
+      if (a && a !== word && a.length < 30) antonyms.push(a);
       if (antonyms.length >= 6) break;
     }
   }
 
-  // ── Extract examples ──────────────────────────────────
-  const examples = [];
-  const exMatches = frText.matchAll(/^#:\s*(?:'')?(.+?)(?:'')?$/gm);
-  for (const m of exMatches) {
-    let ex = m[1].replace(/\{\{[^}]+\}\}/g, '').replace(/\[\[([^\]|]+\|)?([^\]]+)\]\]/g, '$2').trim();
-    if (ex.length > 15 && ex.length < 200) examples.push(ex);
+  // Examples
+  var examples = [];
+  for (var ex of frText.matchAll(/^#:\s*(.+)$/gm)) {
+    var e = clean(ex[1]);
+    if (e.length > 15 && e.length < 200) examples.push(e);
     if (examples.length >= 2) break;
   }
 
-  // ── Build clusters from synonyms ──────────────────────
-  const colors = ['#7c3aed','#ec4899','#0ea5e9','#10b981','#f59e0b'];
-  const chunkSize = Math.ceil(synonyms.length / 5) || 1;
-  const clusters = [];
-  const labels = ['Sens proche', 'Nuance', 'Registre', 'Contexte', 'Variante'];
-  for (let ci = 0; ci < 5 && ci * chunkSize < synonyms.length; ci++) {
-    const chunk = synonyms.slice(ci * chunkSize, (ci + 1) * chunkSize);
-    if (chunk.length) {
-      clusters.push({ name: labels[ci], color: colors[ci], words: chunk });
-    }
+  // Build clusters
+  var colors = ['#7c3aed','#ec4899','#0ea5e9','#10b981','#f59e0b'];
+  var labels = ['Sens proche','Nuance','Registre','Contexte','Variante'];
+  var synList = synonyms.length ? synonyms : ['(aucun synonyme)'];
+  var chunk = Math.max(1, Math.ceil(synList.length / 5));
+  var clusters = [];
+  for (var ci = 0; ci < 5 && ci * chunk < synList.length; ci++) {
+    var words = synList.slice(ci * chunk, (ci + 1) * chunk);
+    if (words.length) clusters.push({ name: labels[ci], color: colors[ci], words: words });
   }
-  if (!clusters.length) {
-    clusters.push({ name: 'Synonymes', color: colors[0], words: ['(aucun trouvé)'] });
-  }
+  if (!clusters.length) clusters.push({ name: 'Synonymes', color: colors[0], words: ['(aucun)'] });
 
   return {
-    def,
-    clusters,
-    antonyms: antonyms.length ? antonyms : [],
-    examples: examples.length ? examples : ["Exemple d'utilisation du mot " + word + "."],
+    def: defLines[0] || 'Mot de la langue française.',
+    clusters: clusters,
+    antonyms: antonyms,
+    examples: examples.length ? examples : ['Exemple du mot ' + word + '.'],
   };
 }
 
 function _renderWord(word, data) {
+  currentWord = word;
   showPage('results');
-  document.getElementById('results-word').textContent = word;
+  var titleEl = document.getElementById('results-word');
+  if (titleEl) titleEl.textContent = word;
   switchView('list');
   buildListView(word, data);
-  currentView = 'list';
-  setTimeout(() => drawGraph(word, data), 80);
+  setTimeout(function() { drawGraph(word, data); }, 80);
 }
+
+
 
 
 
