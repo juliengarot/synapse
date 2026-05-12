@@ -4462,35 +4462,61 @@ function searchWord(word) {
 
 // ── Supabase: lire un mot ────────────────────────────────────
 function fetchFromSupabase(word) {
-  var url = SUPABASE_URL + '/rest/v1/mots'
+  // Étape 1 : récupérer le mot + définition
+  var urlMot = SUPABASE_URL + '/rest/v1/mots'
     + '?mot=eq.' + encodeURIComponent(word)
-    + '&select=id,mot,definition,synonymes(synonyme,registre),antonymes(antonyme),exemples(exemple)';
+    + '&select=id,definition';
 
-  return fetch(url, { headers: supabaseHeaders() })
+  return fetch(urlMot, { headers: supabaseHeaders() })
     .then(function(r) { return r.ok ? r.json() : []; })
     .then(function(rows) {
-      if (!rows || !rows.length) return null;
+      if (!rows || !rows.length) return null; // Mot absent → Wiktionnaire
       var row = rows[0];
-      var byReg = { soutenu:[], courant:[], familier:[], populaire:[] };
-      (row.synonymes || []).forEach(function(s) {
-        var reg = s.registre || 'courant';
-        if (!byReg[reg]) byReg[reg] = [];
-        byReg[reg].push(s.synonyme);
+      var motId = row.id;
+
+      // Étape 2 : récupérer synonymes, antonymes, exemples en parallèle
+      var urlSyns = SUPABASE_URL + '/rest/v1/synonymes?mot_id=eq.' + motId + '&select=synonyme,registre&limit=50';
+      var urlAnts = SUPABASE_URL + '/rest/v1/antonymes?mot_id=eq.'  + motId + '&select=antonyme&limit=10';
+      var urlExs  = SUPABASE_URL + '/rest/v1/exemples?mot_id=eq.'   + motId + '&select=exemple&limit=3';
+
+      return Promise.all([
+        fetch(urlSyns, { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
+        fetch(urlAnts, { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
+        fetch(urlExs,  { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
+      ]).then(function(results) {
+        var syns = results[0] || [];
+        var ants = results[1] || [];
+        var exs  = results[2] || [];
+
+        // Grouper les synonymes par registre
+        var byReg = { soutenu:[], courant:[], familier:[], populaire:[] };
+        syns.forEach(function(s) {
+          var reg = (s.registre || 'courant').toLowerCase();
+          if (!byReg[reg]) byReg[reg] = [];
+          byReg[reg].push(s.synonyme);
+        });
+
+        var colors = { soutenu:'#7c3aed', courant:'#0ea5e9', familier:'#10b981', populaire:'#f59e0b' };
+        var clusters = [];
+        ['soutenu','courant','familier','populaire'].forEach(function(reg) {
+          if (byReg[reg].length > 0) {
+            clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg], words: byReg[reg] });
+          }
+        });
+        if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words:['(aucun)'] });
+
+        return {
+          def:      row.definition || 'Mot de la langue française.',
+          clusters: clusters,
+          antonyms: ants.map(function(a) { return a.antonyme; }),
+          examples: exs.map(function(e)  { return e.exemple;  }),
+        };
       });
-      var colors = { soutenu:'#7c3aed', courant:'#0ea5e9', familier:'#10b981', populaire:'#f59e0b' };
-      var clusters = [];
-      ['soutenu','courant','familier','populaire'].forEach(function(reg) {
-        if (byReg[reg].length > 0) clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg], words: byReg[reg] });
-      });
-      if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words:['(aucun)'] });
-      return {
-        def:      row.definition || 'Mot de la langue française.',
-        clusters: clusters,
-        antonyms: (row.antonymes || []).map(function(a) { return a.antonyme; }),
-        examples: (row.exemples  || []).map(function(e) { return e.exemple; }),
-      };
     })
-    .catch(function() { return null; });
+    .catch(function(err) {
+      console.warn('Supabase error:', err);
+      return null;
+    });
 }
 
 // ── Supabase: sauvegarder un mot (enrichissement auto) ────────
