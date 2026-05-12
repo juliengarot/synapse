@@ -1757,6 +1757,7 @@ const TOP_WORDS_DATA = [
 // STATE
 // ============================================================
 let currentWord = '';
+let currentData  = null; // dernières données chargées
 let currentView = 'graph';
 let currentPage = 'home';
 let simulation = null;
@@ -4097,7 +4098,7 @@ function toggleImmersive() {
   if (btn) btn.title = immersiveActive ? 'Quitter le mode immersif' : 'Mode immersif';
   // Redraw graph to fill new viewport
   if (immersiveActive && currentPage === 'results' && currentView === 'graph') {
-    setTimeout(() => drawGraph(currentWord), 80);
+    setTimeout(() => drawGraph(currentWord, currentData || DICTIONARY[currentWord] || generateFallback(currentWord)), 80);
   }
 }
 
@@ -4265,7 +4266,7 @@ function applyTheme(t) {
     el.classList.toggle('active', el.dataset.t === t);
   });
   if (currentPage === 'results' && currentView === 'graph') {
-    setTimeout(() => drawGraph(currentWord), 100);
+    setTimeout(() => drawGraph(currentWord, currentData || DICTIONARY[currentWord] || generateFallback(currentWord)), 100);
   }
 }
 
@@ -4529,6 +4530,88 @@ function saveToSupabase(word, data) {
   }).catch(function() {});
 }
 
+// ── Wiktionnaire parser ──────────────────────────────────────
+function parseWiktionnaire(wikitext, word) {
+  var frText = wikitext;
+  var frM = wikitext.match(/==\s*\{\{langue\|fr\}\}\s*==([\s\S]*?)(?===\s*\{\{langue\|(?!fr))/i)
+           || wikitext.match(/==\s*\{\{langue\|fr\}\}\s*==([\s\S]*)$/i);
+  if (frM) frText = frM[1];
+
+  function clean(s) {
+    return s.replace(/\{\{[^}]*\}\}/g, '').replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1')
+            .replace(/'{2,3}/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  // Definition
+  var def = 'Mot de la langue française.';
+  var defM = frText.match(/^#\s*(?![*:#])(.{10,})$/m);
+  if (defM) { var d = clean(defM[1]); if (d.length > 8) def = d; }
+
+  // Synonyms — method 1: {{syn|lang=fr|mot1|...}}
+  var synonyms = [];
+  var synTpl = frText.match(/\{\{syn\s*\|([^}]+)\}\}/i);
+  if (synTpl) {
+    synTpl[1].split('|').forEach(function(p) {
+      p = p.replace(/^\s*lang\s*=\s*\S+/, '').replace(/=.+/, '').trim().toLowerCase();
+      if (p && p.length > 1 && p.length < 30 && p !== word && !/[{}|=<>\[\]]/.test(p)) synonyms.push(p);
+    });
+  }
+  // Method 2: ==== Synonymes ==== section
+  if (!synonyms.length) {
+    var synSec = frText.match(/====?\s*Synonym[^=\n]*====?([\s\S]*?)(?:={3,}|$)/i);
+    if (synSec) {
+      var sm, re2 = /\[\[([^\]|#*{}\s<>][^\]|#{}<>]*?)(?:\|[^\]]+)?\]\]/g;
+      while ((sm = re2.exec(synSec[1])) !== null) {
+        var s = sm[1].toLowerCase().trim();
+        if (s && s !== word && s.length < 30) synonyms.push(s);
+        if (synonyms.length >= 25) break;
+      }
+    }
+  }
+
+  // Build clusters by register
+  var byReg = { soutenu:[], courant:[], familier:[], populaire:[] };
+  synonyms.forEach(function(s) {
+    var reg = getRegistre(s);
+    byReg[reg].push(s);
+  });
+  var colors = { soutenu:'#7c3aed', courant:'#0ea5e9', familier:'#10b981', populaire:'#f59e0b' };
+  var clusters = [];
+  ['soutenu','courant','familier','populaire'].forEach(function(reg) {
+    if (byReg[reg].length) clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg], words: byReg[reg] });
+  });
+  if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words: synonyms.length ? synonyms : ['(aucun trouvé)'] });
+
+  // Antonyms
+  var antonyms = [];
+  var antSec = frText.match(/====?\s*Antonym[^=\n]*====?([\s\S]*?)(?:={3,}|$)/i);
+  if (antSec) {
+    var am, re3 = /\[\[([^\]|#*{}\s<>][^\]|#{}<>]*?)(?:\|[^\]]+)?\]\]/g;
+    while ((am = re3.exec(antSec[1])) !== null) {
+      var a = am[1].toLowerCase().trim();
+      if (a && a !== word && a.length < 30) antonyms.push(a);
+      if (antonyms.length >= 6) break;
+    }
+  }
+
+  // Examples
+  var examples = [];
+  var exRe = /^#:\s*(.{15,200})$/gm, em;
+  while ((em = exRe.exec(frText)) !== null) {
+    var e = clean(em[1]);
+    if (e.length > 15) examples.push(e);
+    if (examples.length >= 2) break;
+  }
+
+  return {
+    def: def,
+    clusters: clusters,
+    antonyms: antonyms,
+    antonymes: antonyms,
+    examples: examples.length ? examples : ['Exemple du mot ' + word + '.'],
+  };
+}
+
 // ── Wiktionnaire ─────────────────────────────────────────────
 function fetchFromWiktionnaire(word) {
   return fetch('https://fr.wiktionary.org/w/api.php?action=parse&page=' + encodeURIComponent(word) + '&prop=wikitext&format=json&origin=*')
@@ -4548,11 +4631,11 @@ function fetchFromWiktionnaire(word) {
 
 function _renderWord(word, data) {
   currentWord = word;
+  if (!data || !data.clusters) data = generateFallback(word);
+  currentData  = data; // stocker pour mode réseau + libre
   showPage('results');
   var titleEl = document.getElementById('results-word');
   if (titleEl) titleEl.textContent = word;
-  // S'assurer que data a la bonne structure
-  if (!data || !data.clusters) data = generateFallback(word);
   switchView('list');
   buildListView(word, data);
   setTimeout(function() { drawGraph(word, data); }, 80);
@@ -4771,7 +4854,8 @@ function switchView(view) {
   document.getElementById('btn-list').classList.toggle('active', view === 'list');
   const btnLibre = document.getElementById('btn-libre'); if (btnLibre) btnLibre.classList.remove('active');
   if (view === 'graph' && currentWord) {
-    setTimeout(() => drawGraph(currentWord), 50);
+    var d = currentData || DICTIONARY[currentWord] || generateFallback(currentWord);
+    setTimeout(() => drawGraph(currentWord, d), 50);
   }
 }
 
@@ -4787,7 +4871,7 @@ function showDragZone() {
 }
 
 function buildDragZone() {
-  const data = DICTIONARY[currentWord] || generateFallback(currentWord);
+  const data = currentData || DICTIONARY[currentWord] || generateFallback(currentWord);
   document.getElementById('drag-word-title').textContent = currentWord;
   const canvas2 = document.getElementById('drag-canvas');
   canvas2.innerHTML = '';
