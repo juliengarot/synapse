@@ -1642,7 +1642,7 @@ body.in-dragzone #export-png-btn { display: flex; }
     </div>
     <div class="form-group">
       <label class="form-label">Email</label>
-      <input class="form-input" type="email" placeholder="vous@exemple.fr" required>
+      <input class="form-input" type="email" placeholder="contact@factotum-solutions.fr" required>
     </div>
     <div class="form-group">
       <label class="form-label">Message</label>
@@ -4175,16 +4175,41 @@ function exportGraphPng() {
     canvas.width  = Math.max(bbox.width,  800) * 2; // 2× for retina
     canvas.height = Math.max(bbox.height, 600) * 2;
     const ctx2 = canvas.getContext('2d');
+    URL.revokeObjectURL(url);
+
+    // ── Branding footer ──────────────────────────────────────
+    const brandH  = 36;
+    const newH    = Math.max(bbox.height, 600) + brandH / 2;
+    canvas.height = newH * 2;
     ctx2.scale(2, 2);
     ctx2.fillStyle = themeBg;
-    ctx2.fillRect(0, 0, canvas.width, canvas.height);
+    ctx2.fillRect(0, 0, canvas.width, newH);
     ctx2.drawImage(img, 0, 0, bbox.width, bbox.height);
-    URL.revokeObjectURL(url);
+
+    // Background strip for branding
+    const strip = ctx2.createLinearGradient(0, newH - brandH, 0, newH);
+    strip.addColorStop(0, 'rgba(0,0,0,0)');
+    strip.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx2.fillStyle = strip;
+    ctx2.fillRect(0, newH - brandH, bbox.width, brandH);
+
+    // URL left
+    ctx2.font = '500 11px Inter, sans-serif';
+    ctx2.fillStyle = 'rgba(255,255,255,0.70)';
+    ctx2.textBaseline = 'middle';
+    ctx2.fillText('neuromots.fr', 14, newH - brandH / 2);
+
+    // Tagline right
+    const tagline = 'Trouvez la nuance parfaite, affinez vos idées, aiguisez votre pensée.';
+    ctx2.font = '300 10px Inter, sans-serif';
+    ctx2.fillStyle = 'rgba(255,255,255,0.45)';
+    const tw = ctx2.measureText(tagline).width;
+    ctx2.fillText(tagline, bbox.width - tw - 14, newH - brandH / 2);
 
     // Download
     const a = document.createElement('a');
-    a.download = `synapse-${currentWord || 'graphe'}.png`;
-    a.href = canvas.toDataURL('image/png');
+    a.download = `neuromots-${currentWord || 'graphe'}.png`;
+    a.href = finalCanvas.toDataURL('image/png');
     a.click();
 
     if (btn) { btn.textContent = '↓ PNG'; btn.style.pointerEvents = ''; }
@@ -4369,7 +4394,7 @@ function getRegistre(mot) {
 }
 
 // ── Cache localStorage (200 entrées max, LRU) ─────────────────
-var CACHE_KEY = 'nm_cache_v1';
+var CACHE_KEY = 'nm_cache_v2'; // v2 = nouveau schéma
 var CACHE_MAX = 200;
 
 function cacheGet(word) {
@@ -4464,50 +4489,112 @@ function searchWord(word) {
     });
 }
 
-// ── Supabase: lecture en 4 requêtes parallèles ────────────────
+// ── Supabase: lecture avec nouveau schéma (sens multiples) ──
 function fetchFromSupabase(word) {
   var base = SUPABASE_URL + '/rest/v1/';
   var enc  = encodeURIComponent(word);
 
-  return fetch(base + 'mots?mot=eq.' + enc + '&select=id,definition', { headers: supabaseHeaders() })
-    .then(function(r) {
-      if (!r.ok) { console.warn('[Supabase] mots status:', r.status); return []; }
-      return r.json();
-    })
-    .then(function(rows) {
-      if (!rows || !rows.length) return null;
-      var row   = rows[0];
-      var motId = row.id;
+  // 1. Récupérer le mot
+  return fetch(base + 'mots?mot=eq.' + enc + '&select=id,mot,nature,etymologie',
+    { headers: supabaseHeaders() })
+    .then(function(r) { return r.ok ? r.json() : []; })
+    .then(function(mots) {
+      if (!mots || !mots.length) return null;
+      var mot   = mots[0];
+      var motId = mot.id;
 
-      return Promise.all([
-        fetch(base + 'synonymes?mot_id=eq.' + motId + '&select=synonyme,registre&limit=50', { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
-        fetch(base + 'antonymes?mot_id=eq.'  + motId + '&select=antonyme&limit=10',           { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
-        fetch(base + 'exemples?mot_id=eq.'   + motId + '&select=exemple&limit=3',             { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
-      ]).then(function(res) {
-        var syns = res[0] || [], ants = res[1] || [], exs = res[2] || [];
-        var byReg = {};
-        syns.forEach(function(s) {
-          var reg = (s.registre || 'courant').toLowerCase();
-          if (!byReg[reg]) byReg[reg] = [];
-          byReg[reg].push(s.synonyme);
+      // 2. Récupérer tous les sens de ce mot
+      return fetch(base + 'sens?mot_id=eq.' + motId + '&select=id,numero,definition,contexte&order=numero',
+        { headers: supabaseHeaders() })
+        .then(function(r) { return r.ok ? r.json() : []; })
+        .then(function(sensList) {
+          if (!sensList || !sensList.length) return null;
+
+          // 3. Pour chaque sens, récupérer synonymes + exemples en parallèle
+          var sensPromises = sensList.map(function(s) {
+            return Promise.all([
+              fetch(base + 'synonymes?sens_id=eq.' + s.id + '&select=synonyme,registre,nuance&order=registre',
+                { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
+              fetch(base + 'exemples?sens_id=eq.' + s.id + '&select=exemple,source',
+                { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; })
+            ]).then(function(res) {
+              return Object.assign({}, s, { synonymes: res[0] || [], exemples: res[1] || [] });
+            });
+          });
+
+          // 4. Antonymes + expressions en parallèle
+          var antsPromise = fetch(base + 'antonymes?mot_id=eq.' + motId + '&select=antonyme',
+            { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; });
+          var expsPromise = fetch(base + 'expressions?mot_id=eq.' + motId + '&select=expression,definition',
+            { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; });
+
+          return Promise.all([Promise.all(sensPromises), antsPromise, expsPromise]);
+        })
+        .then(function(results) {
+          if (!results) return null;
+          var sensData = results[0];
+          var ants     = results[1] || [];
+          var exps     = results[2] || [];
+
+          // 5. Construire les clusters par registre (tous sens confondus)
+          var byReg = {};
+          sensData.forEach(function(s) {
+            (s.synonymes || []).forEach(function(syn) {
+              var reg = (syn.registre || 'courant').toLowerCase();
+              if (!byReg[reg]) byReg[reg] = [];
+              if (byReg[reg].indexOf(syn.synonyme) === -1)
+                byReg[reg].push(syn.synonyme);
+            });
+          });
+
+          var colors = {
+            soutenu: '#7c3aed', courant: '#0ea5e9',
+            familier: '#10b981', populaire: '#f59e0b', argot: '#ef4444'
+          };
+          var regOrder = ['soutenu','courant','familier','populaire','argot'];
+          var clusters = [];
+          regOrder.forEach(function(reg) {
+            if (byReg[reg] && byReg[reg].length) {
+              clusters.push({
+                name:  reg.charAt(0).toUpperCase() + reg.slice(1),
+                color: colors[reg] || '#7c3aed',
+                words: byReg[reg]
+              });
+            }
+          });
+          // Registres non standard
+          Object.keys(byReg).forEach(function(reg) {
+            if (regOrder.indexOf(reg) === -1 && byReg[reg].length) {
+              clusters.push({ name: reg, color: '#7c3aed', words: byReg[reg] });
+            }
+          });
+          if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words:['(aucun)'] });
+
+          // Exemples de tous les sens
+          var examples = [];
+          sensData.forEach(function(s) {
+            (s.exemples || []).forEach(function(e) {
+              if (e.exemple) examples.push(e.exemple);
+            });
+          });
+
+          return {
+            def:        sensData[0] ? sensData[0].definition : 'Mot de la langue française.',
+            sens:       sensData,
+            clusters:   clusters,
+            antonyms:   ants.map(function(a) { return a.antonyme; }),
+            antonymes:  ants.map(function(a) { return a.antonyme; }),
+            examples:   examples.length ? examples : ['Exemple du mot ' + word + '.'],
+            expressions: exps
+          };
         });
-        var colors = { soutenu:'#7c3aed', courant:'#0ea5e9', familier:'#10b981', populaire:'#f59e0b' };
-        var clusters = [];
-        ['soutenu','courant','familier','populaire'].forEach(function(reg) {
-          if (byReg[reg] && byReg[reg].length) clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg] || '#7c3aed', words: byReg[reg] });
-        });
-        if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words:['(aucun synonyme)'] });
-        return {
-          def:      row.definition || 'Mot de la langue française.',
-          clusters: clusters,
-          antonyms:  ants.map(function(a) { return a.antonyme; }),
-          antonymes: ants.map(function(a) { return a.antonyme; }),
-          examples: exs.length  ? exs.map(function(e) { return e.exemple; }) : ['Exemple du mot ' + word + '.'],
-        };
-      });
     })
-    .catch(function(err) { console.warn('[Supabase] catch:', err); return null; });
+    .catch(function(err) {
+      console.warn('[Supabase] erreur:', err);
+      return null;
+    });
 }
+
 
 // ── Supabase: sauvegarde silencieuse ──────────────────────────
 function saveToSupabase(word, data) {
