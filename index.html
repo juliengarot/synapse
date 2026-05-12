@@ -1326,6 +1326,106 @@ body.in-dragzone #export-png-btn { display: flex; }
   #immersive-btn  { left: 14px; width: 40px; height: 40px; }
   #export-png-btn { left: 62px; }
 }
+
+/* ── BANDEAU RGPD ─────────────────────────────────────────── */
+#rgpd-banner {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 9999;
+  background: var(--bg2);
+  border-top: 1px solid var(--border2);
+  padding: 20px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.35);
+  transform: translateY(0);
+  transition: transform 0.35s cubic-bezier(.4,0,.2,1);
+}
+#rgpd-banner.hidden {
+  transform: translateY(110%);
+}
+.rgpd-text {
+  flex: 1;
+  min-width: 260px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text2);
+  font-family: var(--font);
+}
+.rgpd-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.rgpd-text a {
+  color: var(--accent1);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: opacity 0.15s;
+}
+.rgpd-text a:hover { opacity: 0.75; }
+
+.rgpd-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+  align-items: center;
+}
+.rgpd-btn-accept {
+  padding: 9px 20px;
+  border-radius: 50px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background: var(--accent1);
+  color: #fff;
+  transition: opacity 0.18s, transform 0.15s;
+  font-family: var(--font);
+  letter-spacing: 0.2px;
+}
+.rgpd-btn-accept:hover { opacity: 0.85; transform: translateY(-1px); }
+
+.rgpd-btn-refuse {
+  padding: 9px 20px;
+  border-radius: 50px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  transition: border-color 0.18s, color 0.18s, transform 0.15s;
+  font-family: var(--font);
+  letter-spacing: 0.2px;
+}
+.rgpd-btn-refuse:hover {
+  border-color: var(--text2);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  #rgpd-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 18px 20px;
+    gap: 16px;
+  }
+  .rgpd-actions { width: 100%; }
+  .rgpd-btn-accept, .rgpd-btn-refuse { flex: 1; text-align: center; }
+}
+
+/* Arctic theme override */
+[data-theme="arctic"] #rgpd-banner {
+  background: rgba(255,255,255,0.82);
+  border-top-color: rgba(14,132,212,0.18);
+}
+
 </style>
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-93SPFD02FC"></script>
@@ -4230,125 +4330,216 @@ function doSearch(fromResults=false) {
   inp.value = '';
 }
 
+// ── Mini registre de langue français ─────────────────────────
+// Source: usage fréquent + TLFi + dictionnaires de niveaux
+var REGISTRE_SOUTENU = new Set([
+  'admirable','belliqueux','bienfaisant','bienveillant','candide','céleste',
+  'clément','diaphane','éloquent','éminent','éphémère','exquis','fabuleux',
+  'fastueux','grandiose','harmonieux','illustre','impeccable','ineffable',
+  'ingénieux','limpide','magnifique','majestueux','mélancolique','mélodieux',
+  'mirifique','noble','opulent','parfait','prodigieux','raffiné','remarquable',
+  'resplendir','serein','singulier','somptueux','splendide','sublime','superbe',
+  'suprême','transcendant','vénérable','vertueux','vigoureux','éclatant',
+  'élégant','énigmatique','étincelant','évocateur','exceptionnel','extraordinaire'
+]);
+
+var REGISTRE_FAMILIER = new Set([
+  'barge','barjo','bluffant','canon','carrément','chouette','cool','dingue',
+  'extra','flippant','galère','génial','giga','gnon','grisant','hyper',
+  'kiffant','kiffer','louche','marrant','méga','mortel','nickel','ouf',
+  'parfait','patate','pépère','pété','relou','rigolo','speed','super',
+  'sympa','taf','top','tordu','truc','trop','vachement','zarbi','zinzin',
+  'beau gosse','au poil','de ouf','de folie','aux petits oignons','taré',
+  'oufissime','chanmé','cheum','miskine','wesh','chelou','dém','boloss'
+]);
+
+var REGISTRE_POPULAIRE = new Set([
+  'boucan','bouffe','boulot','caillou','chialer','cinoche','claque','clebs',
+  'clodo','daronne','flic','frangin','frangine','gosse','gueuler','hosto',
+  'keuf','keum','mec','meuf','nana','naze','piaule','piquer','planquer',
+  'poireauter','ras-le-bol','rigoler','sécher','taulard','teuf','untel',
+  'vacherie','vaurien','zinzin','zouave','être à bout','en avoir marre'
+]);
+
+function getRegistre(mot) {
+  mot = mot.toLowerCase().trim();
+  if (REGISTRE_SOUTENU.has(mot))  return 'soutenu';
+  if (REGISTRE_FAMILIER.has(mot)) return 'familier';
+  if (REGISTRE_POPULAIRE.has(mot))return 'populaire';
+  return 'courant';
+}
+
+// ── Cache localStorage (200 entrées max, LRU) ─────────────────
+var CACHE_KEY = 'nm_cache_v1';
+var CACHE_MAX = 200;
+
+function cacheGet(word) {
+  try {
+    var cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+    if (cache[word]) {
+      // Refresh timestamp (LRU)
+      cache[word].ts = Date.now();
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+      return cache[word].data;
+    }
+  } catch(e) {}
+  return null;
+}
+
+function cacheSet(word, data) {
+  try {
+    var cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+    cache[word] = { data: data, ts: Date.now() };
+    // Evict oldest if over limit
+    var keys = Object.keys(cache);
+    if (keys.length > CACHE_MAX) {
+      keys.sort(function(a,b) { return cache[a].ts - cache[b].ts; });
+      delete cache[keys[0]];
+    }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch(e) {}
+}
+
+// ── Main search function ──────────────────────────────────────
 function searchWord(word) {
   word = word.trim().toLowerCase();
   if (!word) return;
   currentWord = word;
 
   // Update URL for SEO
-  const slug = '/mot/' + encodeURIComponent(word);
-  window.history.pushState({ word }, slug, slug);
+  var slug = '/mot/' + encodeURIComponent(word);
+  window.history.pushState({ word: word }, slug, slug);
   document.title = word.charAt(0).toUpperCase() + word.slice(1) + ' — synonymes et définitions | Neuromots';
-  const metaDesc = document.querySelector('meta[name="description"]');
+  var metaDesc = document.querySelector('meta[name="description"]');
   if (metaDesc) metaDesc.content = 'Synonymes, définitions et réseau de sens du mot "' + word + '". Neuromots.';
 
-  // Fast path: local dictionary
+  // 1. Local dictionary (hardcoded)
   if (DICTIONARY[word]) { _renderWord(word, DICTIONARY[word]); return; }
 
-  // Show results with loading state
+  // 2. localStorage cache
+  var cached = cacheGet(word);
+  if (cached) { _renderWord(word, cached); return; }
+
+  // 3. Wiktionnaire API
   showPage('results');
-  const titleEl = document.getElementById('results-word');
+  var titleEl = document.getElementById('results-word');
   if (titleEl) { titleEl.textContent = word; titleEl.style.opacity = '0.5'; }
 
-  // Wiktionnaire parse API — returns wikitext directly
-  const apiUrl = 'https://fr.wiktionary.org/w/api.php'
+  var apiUrl = 'https://fr.wiktionary.org/w/api.php'
     + '?action=parse&page=' + encodeURIComponent(word)
     + '&prop=wikitext&format=json&origin=*';
 
   fetch(apiUrl)
-    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(r) { return r.ok ? r.json() : {}; })
     .then(function(json) {
-      if (json.error || !json.parse || !json.parse.wikitext) {
-        _renderWord(word, generateFallback(word)); return;
-      }
-      const wikitext = json.parse.wikitext['*'] || '';
-      _renderWord(word, wikitext ? parseWiktionnaire(wikitext, word) : generateFallback(word));
+      var wikitext = (json.parse && json.parse.wikitext) ? (json.parse.wikitext['*'] || '') : '';
+      var data = wikitext ? parseWiktionnaire(wikitext, word) : generateFallback(word);
+      cacheSet(word, data);
+      _renderWord(word, data);
     })
-    .catch(function(err) {
-      console.warn('API error:', err);
-      _renderWord(word, generateFallback(word));
-    })
-    .finally(function() {
-      if (titleEl) titleEl.style.opacity = '1';
-    });
+    .catch(function() { _renderWord(word, generateFallback(word)); })
+    .finally(function() { if (titleEl) titleEl.style.opacity = '1'; });
 }
 
+// ── Wiktionnaire parser ───────────────────────────────────────
 function parseWiktionnaire(wikitext, word) {
-  // Extract French section
+  // Extract French section only
   var frText = wikitext;
   var frM = wikitext.match(/==\s*\{\{langue\|fr\}\}\s*==([\s\S]*?)(?===\s*\{\{langue\|(?!fr))/i)
            || wikitext.match(/==\s*\{\{langue\|fr\}\}\s*==([\s\S]*)$/i);
   if (frM) frText = frM[1];
 
   function clean(s) {
-    return s.replace(/\{\{[^}]*\}\}/g, '')
-            .replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1')
-            .replace(/'''([^']+)'''/g, '$1')
-            .replace(/''([^']+)''/g, '$1')
-            .replace(/\s+/g, ' ').trim();
+    return s
+      .replace(/\{\{[^}]*\}\}/g, '')
+      .replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1')
+      .replace(/'{2,3}/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ').trim();
   }
 
-  // Definitions
-  var defLines = [], defMatches = frText.matchAll(/^#\s*(?![*:#])(.+)$/gm);
-  for (var dm of defMatches) {
-    var d = clean(dm[1]);
-    if (d.length > 8) defLines.push(d);
-    if (defLines.length >= 3) break;
+  // ── Definition ─────────────────────────────────────────────
+  var def = 'Mot de la langue française.';
+  var defM = frText.match(/^#\s*(?![*:#])(.{10,})$/m);
+  if (defM) {
+    var d = clean(defM[1]);
+    if (d.length > 8) def = d;
   }
 
-  // Synonyms from section
+  // ── Synonyms: 3 methods ────────────────────────────────────
   var synonyms = [];
-  var synM = frText.match(/====?\s*Synonym[^=]*====?([\s\S]*?)(?:====?|$)/i);
-  if (synM) {
-    for (var sm of synM[1].matchAll(/\[\[([^\]|#*]+?)(?:\|[^\]]+)?\]\]/g)) {
-      var s = sm[1].toLowerCase().trim();
-      if (s && s !== word && s.length < 30 && !/[{}|]/.test(s)) synonyms.push(s);
-      if (synonyms.length >= 20) break;
-    }
+
+  // Method 1 — {{syn|lang=fr|mot1|mot2|...}}
+  var synTpl = frText.match(/\{\{syn\s*\|([^}]+)\}\}/i);
+  if (synTpl) {
+    synTpl[1].split('|').forEach(function(p) {
+      p = p.replace(/^\s*lang\s*=\s*\S+/, '').replace(/=.+/, '').trim().toLowerCase();
+      if (p && p.length > 1 && p.length < 30 && p !== word && !/[{}|=<>\[\]]/.test(p)) {
+        synonyms.push(p);
+      }
+    });
   }
-  // Fallback: {{syn|...}} template
-  if (!synonyms.length) {
-    for (var st of frText.matchAll(/\{\{syn\|([^}]+)\}\}/gi)) {
-      st[1].split('|').forEach(function(p) {
-        p = p.replace(/lang=[^ |]+/, '').trim().toLowerCase();
-        if (p && p.length > 1 && p !== word && !/[{}=]/.test(p)) synonyms.push(p);
-      });
+
+  // Method 2 — ==== Synonymes ==== section [[liens]]
+  if (synonyms.length === 0) {
+    var synSec = frText.match(/====?\s*Synonym[^=\n]*====?([\s\S]*?)(?:={3,}|$)/i);
+    if (synSec) {
+      var sm, re2 = /\[\[([^\]|#*{}\s<>][^\]|#{}<>]*?)(?:\|[^\]]+)?\]\]/g;
+      while ((sm = re2.exec(synSec[1])) !== null) {
+        var s = sm[1].toLowerCase().trim();
+        if (s && s !== word && s.length < 30) synonyms.push(s);
+        if (synonyms.length >= 25) break;
+      }
     }
   }
 
-  // Antonyms
+  // Method 3 — {{lien|mot|fr}} patterns
+  if (synonyms.length === 0) {
+    var lienRe = /\{\{lien\|([^|{}]+)\|fr\}\}/g, lm;
+    while ((lm = lienRe.exec(frText)) !== null) {
+      var l = lm[1].toLowerCase().trim();
+      if (l && l !== word && l.length < 30) synonyms.push(l);
+    }
+  }
+
+  // ── Build clusters by register ─────────────────────────────
+  var byReg = { soutenu:[], courant:[], familier:[], populaire:[] };
+  synonyms.forEach(function(s) { byReg[getRegistre(s)].push(s); });
+
+  var colors = { soutenu:'#7c3aed', courant:'#0ea5e9', familier:'#10b981', populaire:'#f59e0b' };
+  var clusters = [];
+  ['soutenu','courant','familier','populaire'].forEach(function(reg) {
+    if (byReg[reg].length > 0) {
+      clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg], words: byReg[reg] });
+    }
+  });
+  if (clusters.length === 0) {
+    clusters.push({ name: 'Synonymes', color: '#7c3aed', words: synonyms.length ? synonyms : ['(aucun trouvé)'] });
+  }
+
+  // ── Antonyms ────────────────────────────────────────────────
   var antonyms = [];
-  var antM = frText.match(/====?\s*Antonym[^=]*====?([\s\S]*?)(?:====?|$)/i);
-  if (antM) {
-    for (var am of antM[1].matchAll(/\[\[([^\]|#*]+?)(?:\|[^\]]+)?\]\]/g)) {
+  var antSec = frText.match(/====?\s*Antonym[^=\n]*====?([\s\S]*?)(?:={3,}|$)/i);
+  if (antSec) {
+    var am, re3 = /\[\[([^\]|#*{}\s<>][^\]|#{}<>]*?)(?:\|[^\]]+)?\]\]/g;
+    while ((am = re3.exec(antSec[1])) !== null) {
       var a = am[1].toLowerCase().trim();
       if (a && a !== word && a.length < 30) antonyms.push(a);
       if (antonyms.length >= 6) break;
     }
   }
 
-  // Examples
+  // ── Examples ────────────────────────────────────────────────
   var examples = [];
-  for (var ex of frText.matchAll(/^#:\s*(.+)$/gm)) {
-    var e = clean(ex[1]);
-    if (e.length > 15 && e.length < 200) examples.push(e);
+  var exRe = /^#:\s*(.{15,200})$/gm, em;
+  while ((em = exRe.exec(frText)) !== null) {
+    var e = clean(em[1]);
+    if (e.length > 15) examples.push(e);
     if (examples.length >= 2) break;
   }
 
-  // Build clusters
-  var colors = ['#7c3aed','#ec4899','#0ea5e9','#10b981','#f59e0b'];
-  var labels = ['Sens proche','Nuance','Registre','Contexte','Variante'];
-  var synList = synonyms.length ? synonyms : ['(aucun synonyme)'];
-  var chunk = Math.max(1, Math.ceil(synList.length / 5));
-  var clusters = [];
-  for (var ci = 0; ci < 5 && ci * chunk < synList.length; ci++) {
-    var words = synList.slice(ci * chunk, (ci + 1) * chunk);
-    if (words.length) clusters.push({ name: labels[ci], color: colors[ci], words: words });
-  }
-  if (!clusters.length) clusters.push({ name: 'Synonymes', color: colors[0], words: ['(aucun)'] });
-
   return {
-    def: defLines[0] || 'Mot de la langue française.',
+    def:      def,
     clusters: clusters,
     antonyms: antonyms,
     examples: examples.length ? examples : ['Exemple du mot ' + word + '.'],
@@ -4364,6 +4555,11 @@ function _renderWord(word, data) {
   buildListView(word, data);
   setTimeout(function() { drawGraph(word, data); }, 80);
 }
+
+
+
+
+
 
 
 
@@ -4917,6 +5113,68 @@ document.addEventListener('keydown', e => {
   });
 })();
 
+
+// ── RGPD / Consentement cookies ──────────────────────────────
+(function() {
+  var CONSENT_KEY = 'nm_consent_v1';
+
+  function getConsent() {
+    try { return localStorage.getItem(CONSENT_KEY); } catch(e) { return null; }
+  }
+  function setConsent(val) {
+    try { localStorage.setItem(CONSENT_KEY, val); } catch(e) {}
+  }
+  function hideBanner() {
+    var b = document.getElementById('rgpd-banner');
+    if (!b) return;
+    b.classList.add('hidden');
+    setTimeout(function() { b.style.display = 'none'; }, 380);
+  }
+  function enableGA() {
+    window['ga-disable-G-93SPFD02FC'] = false;
+    if (window.gtag) gtag('consent', 'update', { analytics_storage: 'granted' });
+  }
+  function disableGA() {
+    window['ga-disable-G-93SPFD02FC'] = true;
+    if (window.gtag) gtag('consent', 'update', { analytics_storage: 'denied' });
+  }
+
+  window.rgpdAccept = function() { setConsent('accepted'); enableGA();  hideBanner(); };
+  window.rgpdRefuse = function() { setConsent('refused');  disableGA(); hideBanner(); };
+
+
+  // Consentement GA par defaut = refuse avant choix (CNIL)
+  if (window.gtag) {
+    gtag('consent', 'default', { analytics_storage: 'denied', wait_for_update: 2000 });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var consent = getConsent();
+    if (consent === 'accepted') { enableGA(); hideBanner(); }
+    else if (consent === 'refused') { disableGA(); hideBanner(); }
+    else {
+      disableGA();
+      var b = document.getElementById('rgpd-banner');
+      if (b) b.style.display = 'flex';
+    }
+  });
+})();
 </script>
+
+<!-- Bandeau de consentement RGPD — CNIL conforme -->
+<div id="rgpd-banner" role="dialog" aria-label="Gestion des cookies" aria-live="polite">
+  <p class="rgpd-text">
+    <strong>Ce site utilise des cookies.</strong>
+    Neuromots utilise Google Analytics pour mesurer son audience de manière anonyme
+    et améliorer votre expérience. Ces données ne sont pas revendues.
+    Vous pouvez accepter ou refuser leur collecte à tout moment.
+    <a href="/confidentialite" target="_blank" rel="noopener">Politique de confidentialité</a>
+  </p>
+  <div class="rgpd-actions">
+    <button class="rgpd-btn-refuse" onclick="rgpdRefuse()">Refuser</button>
+    <button class="rgpd-btn-accept" onclick="rgpdAccept()">Accepter</button>
+  </div>
+</div>
+
 </body>
 </html>

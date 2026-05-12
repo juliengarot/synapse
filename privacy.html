@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="rainbow">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Politique de confidentialité — Neuromots</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #050508; --bg2: #0d0d14; --bg3: #141420;
+      --surface: rgba(124,58,237,0.06); --surface2: rgba(124,58,237,0.10);
+      --border: rgba(124,58,237,0.12); --border2: rgba(124,58,237,0.22);
+      --text: #f0eeff; --text2: #9488cc; --text3: #4a4470;
+      --accent1: #7c3aed; --accent2: #ec4899;
+      --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.7;
+    }
+
+    /* Background subtle */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 20% 20%, rgba(124,58,237,0.08) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 35% at 80% 80%, rgba(236,72,153,0.05) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .container {
+      position: relative; z-index: 1;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 64px 24px 80px;
+    }
+
+    /* Header */
+    .page-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo-link {
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--text);
+      text-decoration: none;
+      letter-spacing: -0.5px;
+    }
+    .logo-link span { color: var(--accent1); }
+    .page-header-divider {
+      width: 1px; height: 24px;
+      background: var(--border2);
+    }
+    .page-header-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text2);
+      font-family: var(--mono);
+    }
+
+    /* Last updated */
+    .last-updated {
+      font-size: 12px;
+      color: var(--text3);
+      font-family: var(--mono);
+      margin-bottom: 40px;
+      letter-spacing: 0.5px;
+    }
+
+    /* Sections */
+    .section {
+      margin-bottom: 40px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h2::before {
+      content: '';
+      display: inline-block;
+      width: 3px; height: 18px;
+      background: var(--accent1);
+      border-radius: 2px;
+    }
+    p {
+      font-size: 14px;
+      color: var(--text2);
+      margin-bottom: 10px;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin-bottom: 10px;
+    }
+    ul li {
+      font-size: 14px;
+      color: var(--text2);
+      padding: 4px 0 4px 18px;
+      position: relative;
+    }
+    ul li::before {
+      content: '·';
+      position: absolute;
+      left: 6px;
+      color: var(--accent1);
+      font-weight: 700;
+    }
+    strong { color: var(--text); font-weight: 600; }
+
+    /* Card style for sections */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px 28px;
+    }
+
+    /* Contact */
+    .contact-block {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--accent1);
+      margin-top: 8px;
+    }
+
+    /* Back button */
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 50px;
+      border: 1px solid var(--border2);
+      background: var(--surface);
+      color: var(--text2);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 40px;
+      transition: border-color 0.18s, color 0.18s;
+    }
+    .back-link:hover { border-color: var(--accent1); color: var(--accent1); }
+
+    /* Footer */
+    .page-footer {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text3);
+      font-family: var(--mono);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="page-header">
+    <a href="/" class="logo-link">Neuro<span>mots</span></a>
+    <div class="page-header-divider"></div>
+    <span class="page-header-title">// Confidentialité</span>
+  </div>
+
+  <a href="/" class="back-link">← Retour au dictionnaire</a>
+
+  <h1>Politique de confidentialité</h1>
+  <p class="last-updated">Dernière mise à jour : mai 2025</p>
+
+  <div class="section card">
+    <p>
+      Neuromots (<strong>neuromots.fr</strong>) est un dictionnaire neuronal de synonymes et
+      définitions en langue française. Cette page décrit comment nous collectons et utilisons
+      vos données lors de votre visite.
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>Responsable du traitement</h2>
+    <p>
+      Le site Neuromots est édité à titre personnel. Pour toute question relative à vos données,
+      vous pouvez nous contacter à l'adresse ci-dessous.
+    </p>
+    <div class="contact-block">contact@neuromots.fr</div>
+  </div>
+
+  <div class="section">
+    <h2>Données collectées</h2>
+    <p>Neuromots collecte uniquement les données suivantes, et uniquement si vous avez donné votre consentement :</p>
+    <ul>
+      <li><strong>Pages visitées</strong> et navigation sur le site</li>
+      <li><strong>Durée des sessions</strong> et interactions (clics, recherches)</li>
+      <li><strong>Données techniques</strong> : pays, langue du navigateur, type d'appareil, résolution d'écran</li>
+      <li><strong>Source de trafic</strong> : comment vous êtes arrivé sur le site</li>
+    </ul>
+    <p>Ces données sont <strong>anonymisées</strong> et ne permettent pas de vous identifier personnellement.</p>
+    <p>
+      Neuromots <strong>ne collecte pas</strong> : nom, prénom, adresse e-mail,
+      adresse IP complète, données de paiement, ni aucune donnée sensible.
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>Outil de mesure d'audience</h2>
+    <p>
+      Nous utilisons <strong>Google Analytics 4</strong> (ID : G-93SPFD02FC) pour mesurer
+      l'audience de Neuromots. Cet outil est fourni par Google LLC (États-Unis).
+    </p>
+    <ul>
+      <li>Google Analytics ne s'active qu'après votre consentement explicite</li>
+      <li>L'anonymisation IP est activée par défaut</li>
+      <li>Les données sont conservées <strong>14 mois</strong> (paramètre réduit au minimum)</li>
+      <li>Aucune donnée n'est transmise à des tiers à des fins publicitaires</li>
+    </ul>
+    <p>
+      Pour en savoir plus :
+      <a href="https://policies.google.com/privacy" target="_blank" rel="noopener"
+         style="color:var(--accent1)">Politique de confidentialité Google</a>.
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>Cookies et stockage local</h2>
+    <p>Neuromots utilise le stockage local de votre navigateur (localStorage) pour :</p>
+    <ul>
+      <li><strong>Mémoriser votre choix de consentement</strong> (clé : <code style="font-family:var(--mono);font-size:12px;background:var(--surface2);padding:2px 6px;border-radius:4px">nm_consent_v1</code>)</li>
+      <li><strong>Mettre en cache les résultats de recherche</strong> pour accélérer les recherches répétées (clé : <code style="font-family:var(--mono);font-size:12px;background:var(--surface2);padding:2px 6px;border-radius:4px">nm_cache_v1</code>)</li>
+      <li><strong>Sauvegarder votre préférence de thème visuel</strong></li>
+    </ul>
+    <p>Ces données restent sur votre appareil et ne sont jamais transmises à nos serveurs.</p>
+  </div>
+
+  <div class="section">
+    <h2>Vos droits (RGPD)</h2>
+    <p>Conformément au Règlement Général sur la Protection des Données (RGPD) et à la loi Informatique et Libertés, vous disposez des droits suivants :</p>
+    <ul>
+      <li><strong>Droit d'accès</strong> aux données vous concernant</li>
+      <li><strong>Droit de rectification</strong> des données inexactes</li>
+      <li><strong>Droit à l'effacement</strong> (droit à l'oubli)</li>
+      <li><strong>Droit d'opposition</strong> au traitement de vos données</li>
+      <li><strong>Droit de retrait du consentement</strong> à tout moment</li>
+    </ul>
+    <p>
+      Pour exercer ces droits ou retirer votre consentement : rechargez le site,
+      cliquez sur <strong>Refuser</strong> dans le bandeau de cookies, ou supprimez
+      les données de votre navigateur (Paramètres → Confidentialité → Effacer les données).
+    </p>
+    <p>
+      Vous pouvez également introduire une réclamation auprès de la
+      <a href="https://www.cnil.fr" target="_blank" rel="noopener" style="color:var(--accent1)">CNIL</a>.
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>Hébergement</h2>
+    <ul>
+      <li><strong>Hébergeur :</strong> Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, USA</li>
+      <li>Les données transitent via des connexions chiffrées (HTTPS/TLS)</li>
+      <li>Vercel est conforme au cadre EU-US Data Privacy Framework</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Contact</h2>
+    <p>Pour toute question relative à cette politique ou à vos données personnelles :</p>
+    <div class="contact-block">contact@neuromots.fr</div>
+  </div>
+
+  <footer class="page-footer">
+    © 2025 Neuromots — Dictionnaire neuronal de synonymes et définitions
+  </footer>
+
+</div>
+</body>
+</html>
