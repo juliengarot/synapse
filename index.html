@@ -1435,8 +1435,6 @@ body.in-dragzone #export-png-btn { display: flex; }
     gtag('js', new Date());
     gtag('config', 'G-93SPFD02FC');
   </script>
-  <!-- Vercel Analytics -->
-  <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body data-theme="rainbow">
 
@@ -4408,7 +4406,8 @@ function supabaseHeaders() {
   return {
     'apikey':        SUPABASE_KEY,
     'Authorization': 'Bearer ' + SUPABASE_KEY,
-    'Content-Type':  'application/json'
+    'Content-Type':  'application/json',
+    'Prefer':        'return=representation'
   };
 }
 
@@ -4417,147 +4416,133 @@ function searchWord(word) {
   if (!word) return;
   currentWord = word;
 
-  // Update URL for SEO
+  // Update URL + meta SEO
   var slug = '/mot/' + encodeURIComponent(word);
   window.history.pushState({ word: word }, slug, slug);
   document.title = word.charAt(0).toUpperCase() + word.slice(1) + ' — synonymes et définitions | Neuromots';
   var metaDesc = document.querySelector('meta[name="description"]');
   if (metaDesc) metaDesc.content = 'Synonymes, définitions et réseau de sens du mot "' + word + '". Neuromots.';
 
-  // 1. Dictionnaire local
+  // 1. Dictionnaire local embarqué
   if (DICTIONARY[word]) { _renderWord(word, DICTIONARY[word]); return; }
 
   // 2. Cache localStorage
   var cached = cacheGet(word);
   if (cached) { _renderWord(word, cached); return; }
 
-  // 3. Supabase (base propre)
+  // Afficher la page résultats immédiatement avec état chargement
   showPage('results');
   var titleEl = document.getElementById('results-word');
-  if (titleEl) { titleEl.textContent = word; titleEl.style.opacity = '0.5'; }
+  if (titleEl) { titleEl.textContent = word; titleEl.style.opacity = '0.4'; }
 
+  // 3. Supabase → 4. Wiktionnaire (en cascade)
   fetchFromSupabase(word)
     .then(function(data) {
       if (data) {
+        console.log('[Neuromots] Supabase hit:', word);
         cacheSet(word, data);
         _renderWord(word, data);
-        return;
+        return null;
       }
-      // 4. Pas dans Supabase → Wiktionnaire
-      return fetchFromWiktionnaire(word).then(function(wikiData) {
-        cacheSet(word, wikiData);
-        // Enregistrer dans Supabase pour les prochains visiteurs
-        saveToSupabase(word, wikiData);
-        _renderWord(word, wikiData);
-      });
+      // Pas dans Supabase → Wiktionnaire
+      console.log('[Neuromots] Wiktionnaire fallback:', word);
+      return fetchFromWiktionnaire(word);
     })
-    .catch(function() {
-      var fb = generateFallback(word);
-      _renderWord(word, fb);
+    .then(function(data) {
+      if (!data) return; // déjà rendu via Supabase
+      cacheSet(word, data);
+      saveToSupabase(word, data); // enrichissement silencieux
+      _renderWord(word, data);
+    })
+    .catch(function(err) {
+      console.error('[Neuromots] Erreur:', err);
+      _renderWord(word, generateFallback(word));
     })
     .finally(function() {
       if (titleEl) titleEl.style.opacity = '1';
     });
 }
 
-// ── Supabase: lire un mot ────────────────────────────────────
+// ── Supabase: lecture en 4 requêtes parallèles ────────────────
 function fetchFromSupabase(word) {
-  // Étape 1 : récupérer le mot + définition
-  var urlMot = SUPABASE_URL + '/rest/v1/mots'
-    + '?mot=eq.' + encodeURIComponent(word)
-    + '&select=id,definition';
+  var base = SUPABASE_URL + '/rest/v1/';
+  var enc  = encodeURIComponent(word);
 
-  return fetch(urlMot, { headers: supabaseHeaders() })
-    .then(function(r) { return r.ok ? r.json() : []; })
+  return fetch(base + 'mots?mot=eq.' + enc + '&select=id,definition', { headers: supabaseHeaders() })
+    .then(function(r) {
+      if (!r.ok) { console.warn('[Supabase] mots status:', r.status); return []; }
+      return r.json();
+    })
     .then(function(rows) {
-      if (!rows || !rows.length) return null; // Mot absent → Wiktionnaire
-      var row = rows[0];
+      if (!rows || !rows.length) return null;
+      var row   = rows[0];
       var motId = row.id;
 
-      // Étape 2 : récupérer synonymes, antonymes, exemples en parallèle
-      var urlSyns = SUPABASE_URL + '/rest/v1/synonymes?mot_id=eq.' + motId + '&select=synonyme,registre&limit=50';
-      var urlAnts = SUPABASE_URL + '/rest/v1/antonymes?mot_id=eq.'  + motId + '&select=antonyme&limit=10';
-      var urlExs  = SUPABASE_URL + '/rest/v1/exemples?mot_id=eq.'   + motId + '&select=exemple&limit=3';
-
       return Promise.all([
-        fetch(urlSyns, { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
-        fetch(urlAnts, { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
-        fetch(urlExs,  { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
-      ]).then(function(results) {
-        var syns = results[0] || [];
-        var ants = results[1] || [];
-        var exs  = results[2] || [];
-
-        // Grouper les synonymes par registre
-        var byReg = { soutenu:[], courant:[], familier:[], populaire:[] };
+        fetch(base + 'synonymes?mot_id=eq.' + motId + '&select=synonyme,registre&limit=50', { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
+        fetch(base + 'antonymes?mot_id=eq.'  + motId + '&select=antonyme&limit=10',           { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
+        fetch(base + 'exemples?mot_id=eq.'   + motId + '&select=exemple&limit=3',             { headers: supabaseHeaders() }).then(function(r) { return r.ok ? r.json() : []; }),
+      ]).then(function(res) {
+        var syns = res[0] || [], ants = res[1] || [], exs = res[2] || [];
+        var byReg = {};
         syns.forEach(function(s) {
           var reg = (s.registre || 'courant').toLowerCase();
           if (!byReg[reg]) byReg[reg] = [];
           byReg[reg].push(s.synonyme);
         });
-
         var colors = { soutenu:'#7c3aed', courant:'#0ea5e9', familier:'#10b981', populaire:'#f59e0b' };
         var clusters = [];
         ['soutenu','courant','familier','populaire'].forEach(function(reg) {
-          if (byReg[reg].length > 0) {
-            clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg], words: byReg[reg] });
-          }
+          if (byReg[reg] && byReg[reg].length) clusters.push({ name: reg.charAt(0).toUpperCase()+reg.slice(1), color: colors[reg] || '#7c3aed', words: byReg[reg] });
         });
-        if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words:['(aucun)'] });
-
+        if (!clusters.length) clusters.push({ name:'Synonymes', color:'#7c3aed', words:['(aucun synonyme)'] });
         return {
           def:      row.definition || 'Mot de la langue française.',
           clusters: clusters,
           antonyms: ants.map(function(a) { return a.antonyme; }),
-          examples: exs.map(function(e)  { return e.exemple;  }),
+          examples: exs.length  ? exs.map(function(e) { return e.exemple; }) : ['Exemple du mot ' + word + '.'],
         };
       });
     })
-    .catch(function(err) {
-      console.warn('Supabase error:', err);
-      return null;
-    });
+    .catch(function(err) { console.warn('[Supabase] catch:', err); return null; });
 }
 
-// ── Supabase: sauvegarder un mot (enrichissement auto) ────────
+// ── Supabase: sauvegarde silencieuse ──────────────────────────
 function saveToSupabase(word, data) {
-  // Préparer les synonymes avec registre
   var syns = [];
   (data.clusters || []).forEach(function(cl) {
     var reg = cl.name.toLowerCase();
     (cl.words || []).forEach(function(w) {
-      if (w !== '(aucun trouvé)' && w !== '(aucun synonyme trouvé)') syns.push({ mot: w, registre: reg });
+      if (w && w.indexOf('(aucun') === -1) syns.push({ mot: w, registre: reg });
     });
   });
-
-  var payload = {
-    p_mot:       word,
-    p_definition: data.def || '',
-    p_synonymes: JSON.stringify(syns),
-    p_antonymes: data.antonyms || [],
-    p_exemples:  data.examples || [],
-  };
-
   fetch(SUPABASE_URL + '/rest/v1/rpc/insert_mot_complet', {
-    method:  'POST',
-    headers: supabaseHeaders(),
-    body:    JSON.stringify(payload),
-  }).catch(function() {}); // silencieux si échec
+    method: 'POST', headers: supabaseHeaders(),
+    body: JSON.stringify({
+      p_mot:        word,
+      p_definition: data.def || '',
+      p_synonymes:  JSON.stringify(syns),
+      p_antonymes:  data.antonyms || [],
+      p_exemples:   data.examples || [],
+    }),
+  }).catch(function() {});
 }
 
 // ── Wiktionnaire ─────────────────────────────────────────────
 function fetchFromWiktionnaire(word) {
-  var apiUrl = 'https://fr.wiktionary.org/w/api.php'
-    + '?action=parse&page=' + encodeURIComponent(word)
-    + '&prop=wikitext&format=json&origin=*';
-
-  return fetch(apiUrl)
-    .then(function(r) { return r.ok ? r.json() : {}; })
-    .then(function(json) {
-      var wikitext = (json.parse && json.parse.wikitext) ? (json.parse.wikitext['*'] || '') : '';
-      return wikitext ? parseWiktionnaire(wikitext, word) : generateFallback(word);
+  return fetch('https://fr.wiktionary.org/w/api.php?action=parse&page=' + encodeURIComponent(word) + '&prop=wikitext&format=json&origin=*')
+    .then(function(r) {
+      if (!r.ok) throw new Error('Wiktionnaire HTTP ' + r.status);
+      return r.json();
     })
-    .catch(function() { return generateFallback(word); });
+    .then(function(json) {
+      var wt = json.parse && json.parse.wikitext && json.parse.wikitext['*'];
+      return wt ? parseWiktionnaire(wt, word) : generateFallback(word);
+    })
+    .catch(function(err) {
+      console.warn('[Wiktionnaire] catch:', err);
+      return generateFallback(word);
+    });
 }
 
 function _renderWord(word, data) {
@@ -4565,10 +4550,14 @@ function _renderWord(word, data) {
   showPage('results');
   var titleEl = document.getElementById('results-word');
   if (titleEl) titleEl.textContent = word;
+  // S'assurer que data a la bonne structure
+  if (!data || !data.clusters) data = generateFallback(word);
   switchView('list');
   buildListView(word, data);
   setTimeout(function() { drawGraph(word, data); }, 80);
 }
+
+
 
 
 
